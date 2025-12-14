@@ -1,0 +1,31 @@
+# Core dependencies (always required)
+jupyter
+pandas
+numpy
+flask
+flask-cors
+openai
+python-dotenv
+vega_datasets
+litellm
+duckdb
+vl-convert-python
+backoff
+beautifulsoup4
+scikit-learn
+
+# External data loaders (Azure, BigQuery, AWS S3, MySQL, MSSQL)
+azure-identity
+azure-kusto-data
+azure-keyvault-secrets
+azure-storage-blob
+google-cloud-bigquery
+google-auth
+db-dtypes
+boto3
+pymysql
+pyodbc
+pymongo
+
+# Install data_formulator itself in editable mode
+-e .
