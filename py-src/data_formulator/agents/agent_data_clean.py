@@ -1,15 +1,12 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
+import logging
 
 from data_formulator.agents.agent_utils import extract_json_objects
 from data_formulator.agents.web_utils import download_html_content
 
-import logging
-
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = '''You are a data scientist to help user to generate, extract data from image or clean a text input into a structured csv table. 
+SYSTEM_PROMPT = """You are a data scientist to help user to generate, extract data from image or clean a text input into a structured csv table.
 The output should contain the rationale for the extraction and cleaning process. If there are multiple tables in the raw data, you should extract them all and return them as a list of csv blocks.
 Each table can either be a csv block or a url (image url or file url of an image).
 - csv block: a string of csv content (if the content is already available from the input)
@@ -47,9 +44,9 @@ a json object that explains tables in the raw data, cleaning rationale, and sugg
 - if there are multiple tables yet they can be too large, only extract the first 200 rows for each table.
 
 **Instructions for creating csv blocks:**
-* the output should be a structured csv table: 
+* the output should be a structured csv table:
     - if the raw data is unstructured, structure it into a csv table. If the table is in other formats, transform it into a csv table.
-    - if the raw data contain other informations other than the table (e.g., title, subtitle, footer, summary, etc.), remove surrounding texts that does not belong to the table, so that the table conforms to csv format. 
+    - if the raw data contain other informations other than the table (e.g., title, subtitle, footer, summary, etc.), remove surrounding texts that does not belong to the table, so that the table conforms to csv format.
     - if the raw data contains multiple levels of header, make it a flat table. It's ok to combine multiple levels of headers to form the new header to not lose information.
     - the csv table should have the same number of cells for each line, according to the header. If there are some rows with missing values, patch them with empty values.
     - if the header row misses some columns, add their corresponding column names. E.g., when the header doesn't have an index column, but every row has an index value, add the missing column header.
@@ -67,11 +64,10 @@ a json object that explains tables in the raw data, cleaning rationale, and sugg
 **Instructions for generating synthetic data:**
 - NEVER generate data that has implicit bias as noted above, if that happens, neutralize the data.
 - If the user doesn't indicate how many rows to be generated, plan in generating a dataset with 20-30 rows depending on the content.
-'''
+"""
 
 
-
-EXAMPLE = '''
+EXAMPLE = """
 [RAW DATA]
 
 Rank	NOC	Gold	Silver	Bronze	Total
@@ -86,10 +82,10 @@ Totals (7 entries)	5	5	5	15
 
 [OUTPUT]
 
-'''
+"""
+
 
 class DataCleanAgent(object):
-
     def __init__(self, client):
         self.client = client
 
@@ -97,7 +93,7 @@ class DataCleanAgent(object):
         """derive a new concept based on the raw input data
         Args:
             prompt (str): the prompt to the agent
-            artifacts (list): the artifacts to the agent of format 
+            artifacts (list): the artifacts to the agent of format
             [{"type": "image_url", "content": ...}, {"type": "web_url", "content": ...}, ...]
             dialog (list): the dialog history
         Returns:
@@ -107,52 +103,50 @@ class DataCleanAgent(object):
         content = []
 
         for artifact in artifacts:
-            if artifact['type'] == 'image_url':
-                content.append({
-                    'type': 'image_url',
-                    'image_url': {
-                        "url": artifact['content'],
-                        "detail": "high"
+            if artifact["type"] == "image_url":
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": artifact["content"], "detail": "high"},
                     }
-                })
-            elif artifact['type'] == 'web_url':
+                )
+            elif artifact["type"] == "web_url":
                 try:
-                    content.append({
-                        'type': 'text',
-                        'text': f"[HTML CONTENT]\n\n{download_html_content(artifact['content'])}"
-                    })
+                    content.append(
+                        {
+                            "type": "text",
+                            "text": f"[HTML CONTENT]\n\n{download_html_content(artifact['content'])}",
+                        }
+                    )
                 except Exception as e:
-                    raise Exception('unable to download html from url ' + artifact['content'])
-        
-        content.append({
-            'type': 'text',
-            'text': f'''[INSTRUCTION]\n\n{prompt}\n\n[OUTPUT]\n'''
-        })
+                    raise Exception(
+                        "unable to download html from url " + artifact["content"]
+                    )
 
-        user_prompt = {
-            'role': 'user',
-            'content': content
-        }
+        content.append(
+            {"type": "text", "text": f"""[INSTRUCTION]\n\n{prompt}\n\n[OUTPUT]\n"""}
+        )
+
+        user_prompt = {"role": "user", "content": content}
 
         logger.info(user_prompt)
 
         system_message = {
-            'role': 'system',
-            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]
+            "role": "system",
+            "content": [{"type": "text", "text": SYSTEM_PROMPT}],
         }
 
         messages = [
-            system_message, 
-            *[message for message in dialog if message['role'] != 'system'],
-            user_prompt
+            system_message,
+            *[message for message in dialog if message["role"] != "system"],
+            user_prompt,
         ]
-        
+
         ###### the part that calls open_ai
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages=messages)
 
         candidates = []
         for choice in response.choices:
-            
             logger.info("\n=== Python Data Clean Agent ===>\n")
             logger.info(choice.message.content + "\n")
 
@@ -161,14 +155,20 @@ class DataCleanAgent(object):
             if len(data_blocks) > 0:
                 data_block = data_blocks[-1]
                 result = {
-                    'status': 'ok', 
-                    'content': data_block.get('tables', []), 
+                    "status": "ok",
+                    "content": data_block.get("tables", []),
                 }
             else:
-                result = {'status': 'other error', 'content': 'unable to extract code from response'}
+                result = {
+                    "status": "other error",
+                    "content": "unable to extract code from response",
+                }
 
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'DataCleanAgent'
+            result["dialog"] = [
+                *messages,
+                {"role": choice.message.role, "content": choice.message.content},
+            ]
+            result["agent"] = "DataCleanAgent"
             candidates.append(result)
 
         return candidates

@@ -1,19 +1,21 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
 import json
-
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import  sanitize_table_name, get_sql_table_statistics_str
-
 import logging
+
+from data_formulator.agents.agent_sql_data_transform import (
+    get_sql_table_statistics_str,
+    sanitize_table_name,
+)
+from data_formulator.agents.agent_utils import (
+    extract_json_objects,
+    generate_data_summary,
+)
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = '''You are a journalist to help the user generate a short blog post based off the data and visualization provided by the user.
+SYSTEM_PROMPT = """You are a journalist to help the user generate a short blog post based off the data and visualization provided by the user.
 The user will provide you:
-- the input data summary (the data analysis is based off) 
+- the input data summary (the data analysis is based off)
 - and a list of visualizations (and their corresponding data) that the user wants to include in the report.
 - the report style they want the report to be written in.
 Your job is to generate a short blog post based off the data and visualizations provided by the user. It should be a few paragraphs long, and be easy to read.
@@ -50,10 +52,10 @@ Writing style rules:
 The report should be lightweight, and respect facts in the data. Do not make up any facts or make judgements about the data.
 The report should be based off the data and visualizations provided by the user, do not make up any facts or make judgements about the data.
 Output markdown directly, do not need to include any other text.
-'''
+"""
+
 
 class ReportGenAgent(object):
-
     def __init__(self, client, conn):
         self.client = client
         self.conn = conn
@@ -62,7 +64,7 @@ class ReportGenAgent(object):
         if self.conn:
             data_summary = ""
             for table in input_tables:
-                table_name = sanitize_table_name(table['name'])
+                table_name = sanitize_table_name(table["name"])
                 table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
                 data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
         else:
@@ -73,12 +75,12 @@ class ReportGenAgent(object):
         """derive a new concept based on the raw input data
         Args:
             - input_tables (list): the input tables to the agent
-            - charts (list): the charts to the agent of format 
+            - charts (list): the charts to the agent of format
             [
-                { 
-                    "chart_id": ..., // the id of the chart 
+                {
+                    "chart_id": ..., // the id of the chart
                     "code": ..., // the code that derived this table
-                    "chart_data": { "name": ..., "rows": ... }, 
+                    "chart_data": { "name": ..., "rows": ... },
                     "chart_url": ... // base64 encoded image
                 }
             ]
@@ -91,54 +93,53 @@ class ReportGenAgent(object):
 
         content = []
 
-        content.append({
-            'type': 'text',
-            'text': f'''{data_summary}'''
-        })
+        content.append({"type": "text", "text": f"""{data_summary}"""})
 
         for chart in charts:
-            chart_data = chart['chart_data']
+            chart_data = chart["chart_data"]
             chart_data_summary = self.get_data_summary([chart_data])
-            if chart['chart_url']:
+            if chart["chart_url"]:
                 content += [
                     {
-                        'type': 'text',
-                        'text': f''' [CHART] - chart_id: {chart['chart_id']} \n\n - data summary:\n\n{chart_data_summary} \n\n - code:\n\n{chart['code']}'''
+                        "type": "text",
+                        "text": f""" [CHART] - chart_id: {chart["chart_id"]} \n\n - data summary:\n\n{chart_data_summary} \n\n - code:\n\n{chart["code"]}""",
                     },
                     {
-                        'type': 'image_url',
-                        'image_url': {
-                            "url": chart['chart_url'],
-                            "detail": "high"
-                        }
-                    }
+                        "type": "image_url",
+                        "image_url": {"url": chart["chart_url"], "detail": "high"},
+                    },
                 ]
 
         user_prompt = {
-            'role': 'user',
-            'content': content + [{'type': 'text', 'text': 'Now based off the data and visualizations provided by the user, generate a report in markdown. The style of the report should be ' + style + '.'}]
+            "role": "user",
+            "content": content
+            + [
+                {
+                    "type": "text",
+                    "text": "Now based off the data and visualizations provided by the user, generate a report in markdown. The style of the report should be "
+                    + style
+                    + ".",
+                }
+            ],
         }
 
         system_message = {
-            'role': 'system',
-            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]
+            "role": "system",
+            "content": [{"type": "text", "text": SYSTEM_PROMPT}],
         }
 
-        messages = [
-            system_message, 
-            user_prompt
-        ]
-        
+        messages = [system_message, user_prompt]
+
         ###### the part that calls open_ai
-        stream = self.client.get_completion(messages = messages, stream=True)
+        stream = self.client.get_completion(messages=messages, stream=True)
 
         accumulated_content = ""
-        
+
         for part in stream:
-            if hasattr(part, 'choices') and len(part.choices) > 0:
+            if hasattr(part, "choices") and len(part.choices) > 0:
                 delta = part.choices[0].delta
-                if hasattr(delta, 'content') and delta.content:
+                if hasattr(delta, "content") and delta.content:
                     accumulated_content += delta.content
-                    
+
                     # Stream each character for real-time display as JSON
                     yield delta.content

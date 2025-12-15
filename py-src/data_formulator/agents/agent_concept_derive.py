@@ -1,25 +1,28 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
 import os
 import sys
+
 import pandas as pd
 
-APP_ROOT = os.path.abspath('..')
+APP_ROOT = os.path.abspath("..")
 sys.path.append(os.path.abspath(APP_ROOT))
 
-from data_formulator.agents.agent_utils import generate_data_summary, field_name_to_ts_variable_name, extract_code_from_gpt_response, infer_ts_datatype
-
 import logging
+
+from data_formulator.agents.agent_utils import (
+    extract_code_from_gpt_response,
+    field_name_to_ts_variable_name,
+    generate_data_summary,
+    infer_ts_datatype,
+)
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = '''You are a data scientist to help user to derive new column based on existing columns in a dataset.
+SYSTEM_PROMPT = """You are a data scientist to help user to derive new column based on existing columns in a dataset.
 Your job is to write a typescript function based on input data summary, instruction and output column name.
 Complete a typescript function based off the [CONTEXT], [TEMPLATE] and [GOAL] provided, the function's input arguments are values from input columns, and the output is a value for the output column.
 The function only operates on primitive types and it will be used by a map() function later to generate the new column.
-The function should be as simple as possible. 
+The function should be as simple as possible.
 
 For example:
 
@@ -163,51 +166,70 @@ Derive average grade from writing, reading, math, grade should be A, B, C, D, F
   }
 }
 ```
-'''
+"""
+
 
 class ConceptDeriveAgent(object):
-
     def __init__(self, client):
         self.client = client
 
     def run(self, input_table, input_fields, output_field, description, n=1):
-        """derive a new concept based on input table, input fields, and output field name, (and description)
-        """
-        
+        """derive a new concept based on input table, input fields, and output field name, (and description)"""
+
         data_summary = generate_data_summary([input_table], include_data_samples=True)
 
-        input_fields_info = [{"name": name, "type": infer_ts_datatype(pd.DataFrame(input_table['rows']), name)} for name in input_fields]
-        
-        arg_string = ", ".join([f"{field_name_to_ts_variable_name(field['name'])} : {field['type']}" for field in input_fields_info])
+        input_fields_info = [
+            {
+                "name": name,
+                "type": infer_ts_datatype(pd.DataFrame(input_table["rows"]), name),
+            }
+            for name in input_fields
+        ]
+
+        arg_string = ", ".join(
+            [
+                f"{field_name_to_ts_variable_name(field['name'])} : {field['type']}"
+                for field in input_fields_info
+            ]
+        )
         code_template = f"```typescript\n//{description}\n({arg_string}) => {{\n    // complete code here\n    return {field_name_to_ts_variable_name(output_field)}\n}}\n```"
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[TEMPLATE]\n\n{code_template}\n\n[OUTPUT]\n"
 
         logger.info(user_query)
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
-                    {"role":"user","content": user_query}]
-        
-        ###### the part that calls open_ai
-        response = self.client.get_completion(messages = messages)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_query},
+        ]
 
-        #log = {'messages': messages, 'response': response.model_dump(mode='json')}
+        ###### the part that calls open_ai
+        response = self.client.get_completion(messages=messages)
+
+        # log = {'messages': messages, 'response': response.model_dump(mode='json')}
 
         candidates = []
         for choice in response.choices:
-            
             logger.info("\n=== cocept derive result ===>\n")
             logger.info(choice.message.content + "\n")
 
-            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "typescript")
+            code_blocks = extract_code_from_gpt_response(
+                choice.message.content + "\n", "typescript"
+            )
 
             if len(code_blocks) > 0:
-                result = {'status': 'ok', 'code': code_blocks[-1]}
+                result = {"status": "ok", "code": code_blocks[-1]}
             else:
-                result = {'status': 'other error', 'content': 'unable to extract code from response'}
-            
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'ConceptDeriveAgent'
+                result = {
+                    "status": "other error",
+                    "content": "unable to extract code from response",
+                }
+
+            result["dialog"] = [
+                *messages,
+                {"role": choice.message.role, "content": choice.message.content},
+            ]
+            result["agent"] = "ConceptDeriveAgent"
 
             candidates.append(result)
 

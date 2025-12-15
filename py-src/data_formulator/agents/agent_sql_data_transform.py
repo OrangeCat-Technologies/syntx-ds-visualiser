@@ -1,19 +1,20 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
 import json
+import logging
 import random
+import re
 import string
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
 import pandas as pd
 
-import logging 
-import re
+from data_formulator.agents.agent_utils import (
+    extract_code_from_gpt_response,
+    extract_json_objects,
+)
+
 # Replace/update the logger configuration
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
+SYSTEM_PROMPT = """You are a data scientist to help user to transform data that will be used for visualization.
 The user will provide you information about what data would be needed, and your job is to create a sql query based on the input data summary, transformation instruction and expected fields.
 The users' instruction includes "chart_type" and "chart_encodings" that describe the visualization they want, and natural language instructions "goal" that describe what data is needed.
 
@@ -26,7 +27,7 @@ Concretely, you should first refine users' goal and then create a sql query in t
 
     1. First, refine users' [GOAL]. The main objective in this step is to check if "chart_type" and "chart_encodings" provided by the user are sufficient to achieve their "goal". Concretely:
         - based on the user's "goal" and "chart_type" and "chart_encodings", elaborate the goal into a "detailed_instruction".
-        - "display_instruction" is a short verb phrase describing the users' goal. 
+        - "display_instruction" is a short verb phrase describing the users' goal.
             - it would be a short verbal description of user intent as a verb phrase (<12 words).
             - generate it based on detailed_instruction and the suggested chart_type and chart_encodings, but don't need to mention the chart details.
             - should capture key computation ideas: by reading the display, the user can understand the purpose and what's derived from the data.
@@ -36,13 +37,13 @@ Concretely, you should first refine users' goal and then create a sql query in t
                 * the column can either be a column in the input data, or a new column that will be computed in the output data.
                 * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
-        - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized, 
+        - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized,
             - the "chart_encodings" should be created to support the user's "chart_type".
             - first, determine whether the user has provided sufficient fields in "chart_encodings" that are needed to achieve their goal:
                 - if the user's "chart_encodings" are sufficient, simply copy it.
                 - if the user didn't provide sufficient fields in "chart_encodings", add missing fields in "chart_encodings" (ordered them based on whether the field will be used in x,y axes or legends);
-                    - "chart_encodings" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
-                    - when adding new fields to "chart_encodings", be efficient and add only a minimal number of fields that are needed to achive the user's goal. 
+                    - "chart_encodings" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")
+                    - when adding new fields to "chart_encodings", be efficient and add only a minimal number of fields that are needed to achive the user's goal.
                     - generally, the total number of fields in "chart_encodings" should be no more than 3 for x,y,legend.
                 - if the user's "chart_encodings" is sufficient but can be optimized, you can reorder encodings to visualize the data more effectively.
             - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "chart_encodings"
@@ -95,9 +96,9 @@ some notes:
   * For Unicode character detection, use character ranges directly: [а-яА-Я] for Cyrillic, [一-龥] for Chinese, etc.
   * Alternative: Use ASCII ranges or specific character sets that DuckDB supports
   * Example: Instead of quote ~ '[\\u0400-\\u04FF]', use quote ~ '[а-яА-ЯёЁ]'
-'''
+"""
 
-EXAMPLE='''
+EXAMPLE = """
 [CONTEXT]
 
 Here are our datasets, here are their field summaries and samples:
@@ -128,26 +129,27 @@ table_0 (weather_seattle_atlanta) sample:
 
 [OUTPUT]
 
-{  
-    "detailed_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis. Color the points by which city is warmer.",  
+{
+    "detailed_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis. Color the points by which city is warmer.",
     "display_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures",
-    "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
-    "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"},  
-    "reason": "To compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis, and color points by which city is warmer, separate temperature fields for Seattle and Atlanta are required. Additionally, a new field 'Warmer City' is needed to indicate which city is warmer."  
+    "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],
+    "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"},
+    "reason": "To compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis, and color points by which city is warmer, separate temperature fields for Seattle and Atlanta are required. Additionally, a new field 'Warmer City' is needed to indicate which city is warmer."
 }
 
 ```sql
-WITH MovingAverage AS (  
-    SELECT   
-        Date,  
-        Cases,  
-        AVG(Cases) OVER (ORDER BY Date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS "7-day average cases"  
-    FROM us_covid_cases  
-)  
-SELECT Date, "7-day average cases"  
-FROM MovingAverage;  
+WITH MovingAverage AS (
+    SELECT
+        Date,
+        Cases,
+        AVG(Cases) OVER (ORDER BY Date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS "7-day average cases"
+    FROM us_covid_cases
+)
+SELECT Date, "7-day average cases"
+FROM MovingAverage;
 ```
-'''
+"""
+
 
 def sanitize_table_name(table_name: str) -> str:
     """Sanitize table name to be used in SQL queries"""
@@ -155,130 +157,161 @@ def sanitize_table_name(table_name: str) -> str:
     sanitized_name = table_name.replace(" ", "_")
     sanitized_name = sanitized_name.replace("-", "_")
     # Allow alphanumeric, underscore, dot, dash, and dollar sign
-    sanitized_name = re.sub(r'[^a-zA-Z0-9_\.$]', '', sanitized_name)
+    sanitized_name = re.sub(r"[^a-zA-Z0-9_\.$]", "", sanitized_name)
     return sanitized_name
 
-class SQLDataTransformationAgent(object):
 
+class SQLDataTransformationAgent(object):
     def __init__(self, client, conn, system_prompt=None, agent_coding_rules=""):
         self.client = client
-        self.conn = conn # duckdb connection
-        
+        self.conn = conn  # duckdb connection
+
         # Incorporate agent coding rules into system prompt if provided
         if system_prompt is not None:
             self.system_prompt = system_prompt
         else:
             base_prompt = SYSTEM_PROMPT
             if agent_coding_rules and agent_coding_rules.strip():
-                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should priortize user instructions.\n\n" + agent_coding_rules.strip()
+                self.system_prompt = (
+                    base_prompt
+                    + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should priortize user instructions.\n\n"
+                    + agent_coding_rules.strip()
+                )
             else:
                 self.system_prompt = base_prompt
-
 
     def process_gpt_sql_response(self, response, messages):
         """process gpt response to handle execution"""
 
-        #log = {'messages': messages, 'response': response.model_dump(mode='json')}
-        #logger.info("=== prompt_filter_results ===>")
-        #logger.info(response.prompt_filter_results)
+        # log = {'messages': messages, 'response': response.model_dump(mode='json')}
+        # logger.info("=== prompt_filter_results ===>")
+        # logger.info(response.prompt_filter_results)
 
         if isinstance(response, Exception):
-            result = {'status': 'other error', 'content': str(response.body)}
+            result = {"status": "other error", "content": str(response.body)}
             return [result]
-        
+
         candidates = []
         for choice in response.choices:
             logger.info("=== SQL query result ===>")
             logger.info(choice.message.content + "\n")
-            
+
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:
                 refined_goal = json_blocks[0]
             else:
-                refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': ''}
+                refined_goal = {"chart_encodings": {}, "instruction": "", "reason": ""}
 
-            query_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "sql")
+            query_blocks = extract_code_from_gpt_response(
+                choice.message.content + "\n", "sql"
+            )
 
             if len(query_blocks) > 0:
                 query_str = query_blocks[-1]
 
                 try:
                     # Generate unique table name directly with timestamp and random suffix
-                    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
+                    random_suffix = "".join(random.choices(string.ascii_lowercase, k=4))
                     table_name = f"view_{random_suffix}"
-                    
-                    create_query = f"CREATE VIEW IF NOT EXISTS {table_name} AS {query_str}"
+
+                    create_query = (
+                        f"CREATE VIEW IF NOT EXISTS {table_name} AS {query_str}"
+                    )
                     self.conn.execute(create_query)
                     self.conn.commit()
 
                     # Check how many rows are in the table
-                    row_count = self.conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-                    
+                    row_count = self.conn.execute(
+                        f"SELECT COUNT(*) FROM {table_name}"
+                    ).fetchone()[0]
+
                     # Only limit to 5000 if there are more rows
                     if row_count > 5000:
-                        query_output = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 5000").fetch_df()
+                        query_output = self.conn.execute(
+                            f"SELECT * FROM {table_name} LIMIT 5000"
+                        ).fetch_df()
                     else:
-                        query_output = self.conn.execute(f"SELECT * FROM {table_name}").fetch_df()
-                
+                        query_output = self.conn.execute(
+                            f"SELECT * FROM {table_name}"
+                        ).fetch_df()
+
                     result = {
                         "status": "ok",
                         "code": query_str,
                         "content": {
-                            'rows': json.loads(query_output.to_json(orient='records')),
-                            'virtual': {
-                                'table_name': table_name,
-                                'row_count': row_count
-                            }
+                            "rows": json.loads(query_output.to_json(orient="records")),
+                            "virtual": {
+                                "table_name": table_name,
+                                "row_count": row_count,
+                            },
                         },
                     }
 
                 except Exception as e:
-                    logger.warning('Error occurred during code execution:')
+                    logger.warning("Error occurred during code execution:")
                     error_message = f"An error occurred during code execution. Error type: {type(e).__name__}"
                     logger.warning(error_message)
-                    result = {'status': 'error', 'code': query_str, 'content': error_message}
+                    result = {
+                        "status": "error",
+                        "code": query_str,
+                        "content": error_message,
+                    }
 
             else:
-                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
-            
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'SQLDataTransformationAgent'
-            result['refined_goal'] = refined_goal
+                result = {
+                    "status": "error",
+                    "code": "",
+                    "content": "No code block found in the response. The model is unable to generate code to complete the task.",
+                }
+
+            result["dialog"] = [
+                *messages,
+                {"role": choice.message.role, "content": choice.message.content},
+            ]
+            result["agent"] = "SQLDataTransformationAgent"
+            result["refined_goal"] = refined_goal
             candidates.append(result)
 
         logger.info("=== Transform Candidates ===>")
         for candidate in candidates:
             for key, value in candidate.items():
-                if key in ['dialog', 'content']:
+                if key in ["dialog", "content"]:
                     logger.info(f"##{key}:\n{str(value)[:1000]}...")
                 else:
                     logger.info(f"## {key}:\n{value}")
 
         return candidates
 
-
-    def run(self, input_tables, description, chart_type: str, chart_encodings: dict, prev_messages: list[dict] = [], n=1):
+    def run(
+        self,
+        input_tables,
+        description,
+        chart_type: str,
+        chart_encodings: dict,
+        prev_messages: list[dict] = [],
+        n=1,
+    ):
         """Args:
-            input_tables: list[dict], each dict contains 'name' and 'rows'
-            description: str, the description of the data transformation
-            chart_type: str, the chart type for visualization
-            chart_encodings: dict, the chart encodings mapping visualization channels to fields
-            prev_messages: list[dict], the previous messages
-            n: int, the number of candidates
+        input_tables: list[dict], each dict contains 'name' and 'rows'
+        description: str, the description of the data transformation
+        chart_type: str, the chart type for visualization
+        chart_encodings: dict, the chart encodings mapping visualization channels to fields
+        prev_messages: list[dict], the previous messages
+        n: int, the number of candidates
         """
 
         for table in input_tables:
-            table_name = sanitize_table_name(table['name'])
+            table_name = sanitize_table_name(table["name"])
 
             # Check if table exists in the connection
             try:
                 self.conn.execute(f"DESCRIBE {table_name}")
             except Exception:
                 # Table doesn't exist, create it from the dataframe
-                df = pd.DataFrame(table['rows'])
+                df = pd.DataFrame(table["rows"])
 
                 # Register the dataframe as a temporary view
-                self.conn.register(f'df_temp', df)
+                self.conn.register(f"df_temp", df)
                 # Create a permanent table from the temporary view
                 self.conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df_temp")
                 # Drop the temporary view
@@ -289,10 +322,9 @@ class SQLDataTransformationAgent(object):
                 # Log the creation of the table
                 logger.info(f"Created table {table_name} from dataframe")
 
-
         data_summary = ""
         for table in input_tables:
-            table_name = sanitize_table_name(table['name'])
+            table_name = sanitize_table_name(table["name"])
             table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
             data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
 
@@ -302,25 +334,39 @@ class SQLDataTransformationAgent(object):
             "chart_encodings": chart_encodings,
         }
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}"
+        user_query = (
+            f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}"
+        )
         if len(prev_messages) > 0:
             user_query = f"The user wants a new transformation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
 
         logger.info(user_query)
 
         # Filter out system messages from prev_messages
-        filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
+        filtered_prev_messages = [
+            msg for msg in prev_messages if msg.get("role") != "system"
+        ]
 
-        messages = [{"role":"system", "content": self.system_prompt},
-                    *filtered_prev_messages,
-                    {"role":"user","content": user_query}]
-        
-        response = self.client.get_completion(messages = messages)
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            *filtered_prev_messages,
+            {"role": "user", "content": user_query},
+        ]
+
+        response = self.client.get_completion(messages=messages)
 
         return self.process_gpt_sql_response(response, messages)
-        
 
-    def followup(self, input_tables, dialog, latest_data_sample, chart_type: str, chart_encodings: dict, new_instruction: str, n=1):
+    def followup(
+        self,
+        input_tables,
+        dialog,
+        latest_data_sample,
+        chart_type: str,
+        chart_encodings: dict,
+        new_instruction: str,
+        n=1,
+    ):
         """
         extend the input data (in json records format) to include new fields
         latest_data_sample: the latest data sample that the user is working on, it's a json object that contains the data sample of the current table
@@ -332,66 +378,89 @@ class SQLDataTransformationAgent(object):
         goal = {
             "followup_instruction": new_instruction,
             "chart_type": chart_type,
-            "chart_encodings": chart_encodings
+            "chart_encodings": chart_encodings,
         }
 
         logger.info(f"GOAL: \n\n{goal}")
 
-        #logger.info(dialog)
+        # logger.info(dialog)
 
-        updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
+        updated_dialog = [
+            {"role": "system", "content": self.system_prompt},
+            *dialog[1:],
+        ]
 
         # get the current table name
-        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
+        sample_data_str = (
+            pd.DataFrame(latest_data_sample).head(10).to_string() + "\n......"
+        )
 
-        messages = [*updated_dialog, {"role":"user", 
-                              "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
+        messages = [
+            *updated_dialog,
+            {
+                "role": "user",
+                "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}",
+            },
+        ]
 
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages=messages)
 
         return self.process_gpt_sql_response(response, messages)
-        
 
-def get_sql_table_statistics_str(conn, table_name: str, 
-        row_sample_size: int = 5, # number of rows to be sampled in the sample data part
-        field_sample_size: int = 7, # number of example values for each field to be sampled
-        max_val_chars: int = 140 # max number of characters to be shown for each example value
-    ) -> str:
+
+def get_sql_table_statistics_str(
+    conn,
+    table_name: str,
+    row_sample_size: int = 5,  # number of rows to be sampled in the sample data part
+    field_sample_size: int = 7,  # number of example values for each field to be sampled
+    max_val_chars: int = 140,  # max number of characters to be shown for each example value
+) -> str:
     """Get a string representation of the table statistics"""
 
     table_name = sanitize_table_name(table_name)
 
     # Get column information
     columns = conn.execute(f"DESCRIBE {table_name}").fetchall()
-    sample_data = conn.execute(f"SELECT * FROM {table_name} LIMIT {row_sample_size}").fetchall()
-    
+    sample_data = conn.execute(
+        f"SELECT * FROM {table_name} LIMIT {row_sample_size}"
+    ).fetchall()
+
     # Format sample data as pipe-separated string
     col_names = [col[0] for col in columns]
     formatted_sample_data = "| " + " | ".join(col_names) + " |\n"
     for i, row in enumerate(sample_data):
-        formatted_sample_data += f"{i}| " + " | ".join(str(val)[:max_val_chars]+ "..." if len(str(val)) > max_val_chars else str(val) for val in row) + " |\n"
-    
+        formatted_sample_data += (
+            f"{i}| "
+            + " | ".join(
+                str(val)[:max_val_chars] + "..."
+                if len(str(val)) > max_val_chars
+                else str(val)
+                for val in row
+            )
+            + " |\n"
+        )
+
     col_metadata_list = []
     for col in columns:
         col_name = col[0]
         col_type = col[1]
-        
+
         # Properly quote column names to avoid SQL keywords issues
         quoted_col_name = f'"{col_name}"'
-        
+
         # Basic stats query
         stats_query = f"""
-        SELECT 
+        SELECT
             COUNT(*) as count,
             COUNT(DISTINCT {quoted_col_name}) as unique_count,
             COUNT(*) - COUNT({quoted_col_name}) as null_count
         FROM {table_name}
         """
-        
+
         # Add numeric stats if applicable
-        if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
+        if col_type in ["INTEGER", "DOUBLE", "DECIMAL"]:
             stats_query = f"""
-            SELECT 
+            SELECT
                 COUNT(*) as count,
                 COUNT(DISTINCT {quoted_col_name}) as unique_count,
                 COUNT(*) - COUNT({quoted_col_name}) as null_count,
@@ -400,46 +469,52 @@ def get_sql_table_statistics_str(conn, table_name: str,
                 AVG({quoted_col_name}) as avg_value
             FROM {table_name}
             """
-        
+
         col_stats = conn.execute(stats_query).fetchone()
-        
+
         # Create a dictionary with appropriate keys based on column type
-        if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
-            stats_dict = dict(zip(
-                ["count", "unique_count", "null_count", "min", "max", "avg"],
-                col_stats
-            ))
+        if col_type in ["INTEGER", "DOUBLE", "DECIMAL"]:
+            stats_dict = dict(
+                zip(
+                    ["count", "unique_count", "null_count", "min", "max", "avg"],
+                    col_stats,
+                )
+            )
         else:
-            stats_dict = dict(zip(
-                ["count", "unique_count", "null_count"],
-                col_stats
-            ))
+            stats_dict = dict(zip(["count", "unique_count", "null_count"], col_stats))
 
             # Combined query for top 4 and bottom 3 values using UNION ALL
             query_for_sample_values = f"""
             (SELECT DISTINCT {quoted_col_name}
-                FROM {table_name} 
-                WHERE {quoted_col_name} IS NOT NULL 
+                FROM {table_name}
+                WHERE {quoted_col_name} IS NOT NULL
                 LIMIT {field_sample_size})
             """
-            
-            sample_values = conn.execute(query_for_sample_values).fetchall()
-            
-            stats_dict['sample_values'] = [str(val)[:max_val_chars]+ "..." if len(str(val)) > max_val_chars else str(val) for val in sample_values]
 
-        col_metadata_list.append({
-            "column": col_name,
-            "type": col_type,
-            "statistics": stats_dict,
-        })
+            sample_values = conn.execute(query_for_sample_values).fetchall()
+
+            stats_dict["sample_values"] = [
+                str(val)[:max_val_chars] + "..."
+                if len(str(val)) > max_val_chars
+                else str(val)
+                for val in sample_values
+            ]
+
+        col_metadata_list.append(
+            {
+                "column": col_name,
+                "type": col_type,
+                "statistics": stats_dict,
+            }
+        )
 
     table_metadata = {
         "column_metadata": col_metadata_list,
-        "sample_data_str": formatted_sample_data
+        "sample_data_str": formatted_sample_data,
     }
 
     table_summary_str = f"Column metadata:\n\n"
-    for col_metadata in table_metadata['column_metadata']:
+    for col_metadata in table_metadata["column_metadata"]:
         table_summary_str += f"\t{col_metadata['column']} ({col_metadata['type']}) ---- {col_metadata['statistics']}\n"
     table_summary_str += f"\n\nSample data:\n\n{table_metadata['sample_data_str']}\n"
 

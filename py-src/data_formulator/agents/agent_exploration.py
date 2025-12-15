@@ -1,16 +1,19 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
+import base64
 import json
 import logging
-import base64
 
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
+from data_formulator.agents.agent_sql_data_transform import (
+    get_sql_table_statistics_str,
+    sanitize_table_name,
+)
+from data_formulator.agents.agent_utils import (
+    extract_json_objects,
+    generate_data_summary,
+)
 
 logger = logging.getLogger(__name__)
 
-FOLLOWUP_PROMPT = '''
+FOLLOWUP_PROMPT = """
 You are a data exploration expert to suggest a follow-up analysis to help the user explore their data.
 The user will provide you:
 * in [CONTEXT] section, the input data the user is working with (every step is directly computed based on this input data).
@@ -39,7 +42,7 @@ Guidelines:
 
 ```json
 {
-    "status": "present|warning", // Decision on whether to present findings or warning 
+    "status": "present|warning", // Decision on whether to present findings or warning
     "summary": "...", // a string, a concise summary of the findings and insights (or why stop) in bullet points based on all analysis steps.
 }
 ```
@@ -88,13 +91,13 @@ Guidelines:
 ```json
 {
     "status": "continue",
-    "next_steps": [...], 
+    "next_steps": [...],
 }
 ```
-'''
+"""
+
 
 class ExplorationAgent(object):
-
     def __init__(self, client, agent_exploration_rules="", db_conn=None):
         self.agent_exploration_rules = agent_exploration_rules
         self.client = client
@@ -104,19 +107,18 @@ class ExplorationAgent(object):
         """Process GPT response to extract exploration plan"""
 
         if isinstance(response, Exception):
-            return [{'status': 'other error', 'content': str(response.body)}]
-        
+            return [{"status": "other error", "content": str(response.body)}]
+
         candidates = []
         for choice in response.choices:
-            
             logger.info("\n=== Exploration Planning Result ===>\n")
             logger.info(choice.message.content + "\n")
-            
+
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if not json_blocks:
                 result = {
-                    'status': 'error', 
-                    'content': "No valid JSON found in response"
+                    "status": "error",
+                    "content": "No valid JSON found in response",
                 }
             else:
                 exploration_plan = json_blocks[0]
@@ -124,28 +126,25 @@ class ExplorationAgent(object):
                     "status": "ok",
                     "content": exploration_plan,
                 }
-            
-            result['dialog'] = [*messages[1:], {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'ExplorationAgent'
+
+            result["dialog"] = [
+                *messages[1:],
+                {"role": choice.message.role, "content": choice.message.content},
+            ]
+            result["agent"] = "ExplorationAgent"
             candidates.append(result)
 
         return candidates
-    
+
     def get_chart_message(self, visualization):
         if not visualization:
             return {"type": "text", "text": "The visualization is not available."}
-        if visualization.startswith('data:'):
+        if visualization.startswith("data:"):
             # Base64 data URL
-            return {
-                "type": "image_url",
-                "image_url": {"url": visualization}
-            }
-        elif visualization.startswith('http'):
+            return {"type": "image_url", "image_url": {"url": visualization}}
+        elif visualization.startswith("http"):
             # HTTP URL
-            return {
-                "type": "image_url", 
-                "image_url": {"url": visualization}
-            }
+            return {"type": "image_url", "image_url": {"url": visualization}}
         else:
             return {"type": "text", "text": "The visualization is not available."}
 
@@ -153,58 +152,79 @@ class ExplorationAgent(object):
         if self.db_conn:
             data_summary = ""
             for table in input_tables:
-                table_name = sanitize_table_name(table['name'])
-                table_summary_str = get_sql_table_statistics_str(self.db_conn, table_name)
+                table_name = sanitize_table_name(table["name"])
+                table_summary_str = get_sql_table_statistics_str(
+                    self.db_conn, table_name
+                )
                 data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
         else:
             data_summary = generate_data_summary(input_tables)
         return data_summary
-            
-    def suggest_followup(self, input_tables, completed_steps: list[dict], next_steps: list[str]):
+
+    def suggest_followup(
+        self, input_tables, completed_steps: list[dict], next_steps: list[str]
+    ):
         """
         Interpret analysis results and decide whether to continue exploration or present findings
-        
+
         Args:
             input_tables: the input tables the user is working with
             steps: the previous analysis results, it is a list of:
                 - analysis question
                 - the code, data, and visualization generated to answer this question
-            
+
         Returns:
             the followup analysis based on the previous results
         """
-        
+
         data_summary = self.get_data_summary(input_tables)
 
         # Prepare messages for the completion call
         messages = [
-            {"role": "system", "content": FOLLOWUP_PROMPT + "\n\n[AGENT EXPLORATION RULES]\n" + self.agent_exploration_rules + "\n\nPlease follow the above agent exploration rules when suggesting followup steps."},
+            {
+                "role": "system",
+                "content": FOLLOWUP_PROMPT
+                + "\n\n[AGENT EXPLORATION RULES]\n"
+                + self.agent_exploration_rules
+                + "\n\nPlease follow the above agent exploration rules when suggesting followup steps.",
+            },
             {"role": "user", "content": f"[CONTEXT]\n\n{data_summary}"},
         ]
 
-        for i,step in enumerate(completed_steps):
-            code = step['code']
-            if 'name' not in step['data'] or step['data']['name'] is None:
-                step['data']['name'] = f'table-s-{i+1}'
-            data = self.get_data_summary([step['data']])
+        for i, step in enumerate(completed_steps):
+            code = step["code"]
+            if "name" not in step["data"] or step["data"]["name"] is None:
+                step["data"]["name"] = f"table-s-{i + 1}"
+            data = self.get_data_summary([step["data"]])
 
-            if step['visualization']:
-                chart_message = self.get_chart_message(step['visualization'])
-                
+            if step["visualization"]:
+                chart_message = self.get_chart_message(step["visualization"])
+
                 # Create content array with text and image
                 content = [
-                    {"type": "text", "text": f"[COMPLETED STEP {i+1}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}\n\n**Visualization**:"}
+                    {
+                        "type": "text",
+                        "text": f"[COMPLETED STEP {i + 1}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}\n\n**Visualization**:",
+                    }
                 ]
                 content.append(chart_message)
             else:
                 content = [
-                    {"type": "text", "text": f"[COMPLETED STEP {i+1}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}"}
+                    {
+                        "type": "text",
+                        "text": f"[COMPLETED STEP {i + 1}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}",
+                    }
                 ]
-            
+
             messages.append({"role": "user", "content": content})
-        
-        messages.append({"role": "user", "content": f"[NEXT STEPS]\n\n{json.dumps(next_steps, indent=4)}"})
+
+        messages.append(
+            {
+                "role": "user",
+                "content": f"[NEXT STEPS]\n\n{json.dumps(next_steps, indent=4)}",
+            }
+        )
 
         response = self.client.get_completion(messages)
-        
+
         return self.process_gpt_response(messages, response)

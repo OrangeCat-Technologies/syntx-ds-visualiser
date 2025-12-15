@@ -1,18 +1,20 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
 import json
-
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import  sanitize_table_name, get_sql_table_statistics_str
-
 import logging
+
+from data_formulator.agents.agent_sql_data_transform import (
+    get_sql_table_statistics_str,
+    sanitize_table_name,
+)
+from data_formulator.agents.agent_utils import (
+    extract_json_objects,
+    generate_data_summary,
+)
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based off the table provided by the user.
-Given a dataset provided by the user, 
+SYSTEM_PROMPT = """You are a data scientist to help user infer data types based off the table provided by the user.
+Given a dataset provided by the user,
 1. suggest a descriptive name for the table if the table name is a generic name like table-6, the suggested name should best capture meaning of the table but also very concise.
     - if the table already have a descriptive name provided in the bracket (...), use it; if the provided name is not descriptive, suggest a new name.
     - format table name using '-' when it contains multiple words (e.g., "income", "weather-seattle-atlanta")
@@ -32,7 +34,7 @@ Sort order:
 - when the natural sort order is alphabetical or there is not natural sort order, there is no need to generate sort_order, examples:
     - Name, State, City, etc.
 
-Special cases: 
+Special cases:
 * sometimes, column name is year like "2020", "2021" but its content is not actually year (e.g., sales), in these cases, the semantic type of the column would not be Year!
 
 Create a json object function based off the [DATA] provided.
@@ -43,16 +45,16 @@ output should be in the format of:
 {
     "suggested_table_name": ..., // the name of the table
     "fields": {
-        "field1": {"type": ..., "semantic_type": ..., "sort_order": [...]}, // replace field1 field2 with actual field names, if the field is string type and is ordinal, provide the natural sort order of the fields here 
+        "field1": {"type": ..., "semantic_type": ..., "sort_order": [...]}, // replace field1 field2 with actual field names, if the field is string type and is ordinal, provide the natural sort order of the fields here
         "field2": {"type": ..., "semantic_type": ...}, // no need to provide sort_order if there is no inherent order of the field values
         ...
     },
     "data summary": ... // a short summary of the data
 }
 ```
-'''
+"""
 
-EXAMPLES = '''
+EXAMPLES = """
 [DATA]
 
 Here are our datasets, here are their field summaries and samples:
@@ -117,73 +119,83 @@ table_0 (weather_seattle_atlanta) sample:
 [OUTPUT]
 
 ```
-{  
+{
     "suggested_table_name": "weather_seattle_atlanta",
-    "fields": {  
-        "Date": {  
-            "type": "string",  
-            "semantic_type": "Date",  
-            "sort_order": null  
-        },  
-        "City": {  
-            "type": "string",  
-            "semantic_type": "Location",  
-            "sort_order": null  
-        },  
-        "Temperature": {  
-            "type": "number",  
-            "semantic_type": "Number",  
-            "sort_order": null  
-        }  
-    },  
+    "fields": {
+        "Date": {
+            "type": "string",
+            "semantic_type": "Date",
+            "sort_order": null
+        },
+        "City": {
+            "type": "string",
+            "semantic_type": "Location",
+            "sort_order": null
+        },
+        "Temperature": {
+            "type": "number",
+            "semantic_type": "Number",
+            "sort_order": null
+        }
+    },
     "data_summary": "This dataset contains weather information for the cities of Seattle and Atlanta. The fields include the date, city name, and temperature readings. The 'Date' field represents dates in a string format, the 'City' field represents city names, and the 'Temperature' field represents temperature values in integer format.",
-}```'''
+}```"""
+
 
 class DataLoadAgent(object):
-
     def __init__(self, client, conn):
         self.client = client
         self.conn = conn
 
     def run(self, input_data, n=1):
-
-        if input_data['virtual']:
-            table_name = sanitize_table_name(input_data['name'])
-            table_summary_str = get_sql_table_statistics_str(self.conn, table_name, row_sample_size=5, field_sample_size=30)
+        if input_data["virtual"]:
+            table_name = sanitize_table_name(input_data["name"])
+            table_summary_str = get_sql_table_statistics_str(
+                self.conn, table_name, row_sample_size=5, field_sample_size=30
+            )
             data_summary = f"[TABLE {table_name}]\n\n{table_summary_str}"
         else:
-            data_summary = generate_data_summary([input_data], include_data_samples=True, field_sample_size=30)
+            data_summary = generate_data_summary(
+                [input_data], include_data_samples=True, field_sample_size=30
+            )
 
         user_query = f"[DATA]\n\n{data_summary}\n\n[OUTPUT]"
 
         logger.info(user_query)
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
-                    {"role":"user","content": user_query}]
-        
-        response = self.client.get_completion(messages = messages)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_query},
+        ]
+
+        response = self.client.get_completion(messages=messages)
 
         candidates = []
         for choice in response.choices:
-            
             logger.info("\n=== Data load result ===>\n")
             logger.info(choice.message.content + "\n")
-            
+
             json_blocks = extract_json_objects(choice.message.content + "\n")
             logger.info(json_blocks)
-            
+
             if len(json_blocks) > 0:
-                result = {'status': 'ok', 'content': json_blocks[0]}
+                result = {"status": "ok", "content": json_blocks[0]}
             else:
                 try:
                     json_block = json.loads(choice.message.content + "\n")
-                    result = {'status': 'ok', 'content': json_block}
+                    result = {"status": "ok", "content": json_block}
                 except:
-                    result = {'status': 'other error', 'content': 'unable to extract VegaLite script from response'}
-            
+                    result = {
+                        "status": "other error",
+                        "content": "unable to extract VegaLite script from response",
+                    }
+
             # individual dialog for the agent
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'DataLoadAgent'
+            result["dialog"] = [
+                *messages,
+                {"role": choice.message.role, "content": choice.message.content},
+            ]
+            result["agent"] = "DataLoadAgent"
 
             candidates.append(result)
 

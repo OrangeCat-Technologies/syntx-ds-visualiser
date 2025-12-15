@@ -1,23 +1,21 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
-import time
 import json
-
-from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
-import data_formulator.py_sandbox as py_sandbox
-
+import logging
+import time
 import traceback
 
-import logging
+import data_formulator.py_sandbox as py_sandbox
+from data_formulator.agents.agent_utils import (
+    extract_code_from_gpt_response,
+    generate_data_summary,
+)
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = '''You are a data scientist to help user to derive new column based on existing columns in a dataset.
+SYSTEM_PROMPT = """You are a data scientist to help user to derive new column based on existing columns in a dataset.
 Your job is to write a python function based on input data summary, instruction and output column name.
 Complete a python function based off the [CONTEXT], [TEMPLATE] and [GOAL] provided, the function's input arguments is a dataframe, and the new column derived from the dataframe is returned.
-The function should be as simple as possible. 
+The function should be as simple as possible.
 
 Allowed imports, if you need any of them, import yourself, otherwise, do not import (other libraries will be blocked):
 - pandas (import pandas as pd is always included)
@@ -77,79 +75,95 @@ table_0 (us_covid_cases) sample:
 [OUTPUT]
 
 ```python
-import re  
-import datetime  
-  
-def derive_new_column(df):  
-    df['month'] = df['Date'].apply(lambda x: datetime.datetime.strptime(x, '%m/%d/%Y').month)  
-    return df['month']  
+import re
+import datetime
+
+def derive_new_column(df):
+    df['month'] = df['Date'].apply(lambda x: datetime.datetime.strptime(x, '%m/%d/%Y').month)
+    return df['month']
 ```
-'''
+"""
 
 
 class PyConceptDeriveAgent(object):
-
     def __init__(self, client, exec_python_in_subprocess=False):
         self.client = client
         self.exec_python_in_subprocess = exec_python_in_subprocess
 
     def run(self, input_table, input_fields, output_field, description):
-        """derive a new concept based on input table, input fields, and output field name, (and description)
-        """
-        
+        """derive a new concept based on input table, input fields, and output field name, (and description)"""
+
         data_summary = generate_data_summary([input_table], include_data_samples=True)
 
         objective = {
             "input_fields": input_fields,
             "output_field": output_field,
-            "description": description
+            "description": description,
         }
-        
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{objective}\n\n[OUTPUT]\n"
+
+        user_query = (
+            f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{objective}\n\n[OUTPUT]\n"
+        )
 
         logger.info(user_query)
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
-                    {"role":"user","content": user_query}]
-        
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_query},
+        ]
+
         time_start = time.time()
         ###### the part that calls open_ai
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages=messages)
         time_end = time.time()
         logger.info(f"time taken to get response: {time_end - time_start} seconds")
 
-        #log = {'messages': messages, 'response': response.model_dump(mode='json')}
+        # log = {'messages': messages, 'response': response.model_dump(mode='json')}
 
         candidates = []
         for choice in response.choices:
-            
             logger.info("\n=== Python Data Derive Agent ===>\n")
             logger.info(choice.message.content + "\n")
 
-            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
+            code_blocks = extract_code_from_gpt_response(
+                choice.message.content + "\n", "python"
+            )
 
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
                 try:
-                    result =  py_sandbox.run_derive_concept(code_str, output_field, input_table['rows'], self.exec_python_in_subprocess)
+                    result = py_sandbox.run_derive_concept(
+                        code_str,
+                        output_field,
+                        input_table["rows"],
+                        self.exec_python_in_subprocess,
+                    )
 
-                    if result['status'] == 'ok':
-                        result['content'] = {
-                            'rows': json.loads(result['content'].to_json(orient='records')),
+                    if result["status"] == "ok":
+                        result["content"] = {
+                            "rows": json.loads(
+                                result["content"].to_json(orient="records")
+                            ),
                         }
                     else:
-                        print(result['content'])
-                    result['code'] = code_str
+                        print(result["content"])
+                    result["code"] = code_str
                 except Exception as e:
-                    print('other error:')
+                    print("other error:")
                     error_message = traceback.format_exc()
                     print(error_message)
-                    result = {'status': 'other error', 'content': error_message}
+                    result = {"status": "other error", "content": error_message}
             else:
-                result = {'status': 'other error', 'content': 'unable to extract code from response'}
+                result = {
+                    "status": "other error",
+                    "content": "unable to extract code from response",
+                }
 
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'PyConceptDeriveAgent'
+            result["dialog"] = [
+                *messages,
+                {"role": choice.message.role, "content": choice.message.content},
+            ]
+            result["agent"] = "PyConceptDeriveAgent"
             candidates.append(result)
 
         time_end = time.time()

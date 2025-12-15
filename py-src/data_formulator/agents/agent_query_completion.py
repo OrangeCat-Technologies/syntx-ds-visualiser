@@ -1,18 +1,14 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
 import json
+import logging
+import re
 
 from data_formulator.agents.agent_utils import extract_json_objects
-import re
-import logging
-
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = '''You are a data scientist to help with data queries. 
-The user will provide you with a description of the data source and tables available in the [DATA SOURCE] section and a query in the [USER INPUTS] section. 
+SYSTEM_PROMPT = """You are a data scientist to help with data queries.
+The user will provide you with a description of the data source and tables available in the [DATA SOURCE] section and a query in the [USER INPUTS] section.
 You will need to help the user complete the query and provide reasoning for the query you generated in the [OUTPUT] section.
 
 Input format:
@@ -22,7 +18,7 @@ Input format:
 * The user input is a natural language description of the query or a partial query you need to complete.
 
 Steps:
-* Based on data source description and user input, you should first decide on what language should be used to query the data. 
+* Based on data source description and user input, you should first decide on what language should be used to query the data.
 * Then, describe the logic for the query you generated in a json object in a block ```json``` with the following fields:
     * `language`: the language of the query you generated
     * `tables`: the names of the tables you will use in the query
@@ -42,38 +38,41 @@ Output format:
 ```
 
 [QUERY]
-```{language}   
+```{language}
 {query}
 ```
-'''
+"""
+
 
 class QueryCompletionAgent(object):
-
     def __init__(self, client):
         self.client = client
 
     def run(self, data_source_metadata, query):
-
         # For MongoDB, treat it as a SQL-like data source for query generation
-        if data_source_metadata['data_loader_type'] == "mongodb":
-            data_source_metadata['data_loader_type'] = "SQL"
+        if data_source_metadata["data_loader_type"] == "mongodb":
+            data_source_metadata["data_loader_type"] = "SQL"
 
         user_query = f"[DATA SOURCE]\n\n{json.dumps(data_source_metadata, indent=2)}\n\n[USER INPUTS]\n\n{query}\n\n"
 
         logger.info(user_query)
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
-                    {"role":"user","content": user_query}]
-        
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_query},
+        ]
+
         ###### the part that calls open_ai
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages=messages)
         response_content = response.choices[0].message.content
-        
+
         logger.info(f"=== query completion output ===>\n{response_content}\n")
 
-        reasoning = extract_json_objects(response_content.split("[QUERY]")[0].strip())[0]
+        reasoning = extract_json_objects(response_content.split("[QUERY]")[0].strip())[
+            0
+        ]
         output_query = response_content.split("[QUERY]")[1].strip()
-        
+
         # Extract the query by removing the language markers
         language_pattern = r"```(\w+)\s+(.*?)```"
         match = re.search(language_pattern, output_query, re.DOTALL)

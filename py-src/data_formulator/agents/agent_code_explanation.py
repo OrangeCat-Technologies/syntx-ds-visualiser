@@ -1,15 +1,16 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
 import json
-from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects, extract_code_from_gpt_response
-
 import logging
+
+from data_formulator.agents.agent_utils import (
+    extract_code_from_gpt_response,
+    extract_json_objects,
+    generate_data_summary,
+)
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = r'''You are a data scientist to help user explain code, 
+SYSTEM_PROMPT = r"""You are a data scientist to help user explain code,
 so that a non-code can clearly understand what the code is doing, you are provided with a summary of the input data, and the transformation code.
 
 Your goal:
@@ -26,7 +27,7 @@ Your goal:
         - Block math: `\[ ... \]` for standalone formulas
         - Examples: `\( \frac{\text{Revenue}}{\text{Cost}} \)` for ratios, `\[ \text{Score} = \text{Rating} \times \text{Worldwide\_Gross} \]` for formulas
         - note: when using underscores as part of the text, you need to escape them with a backslash, e.g., `\_`
-    - Note: don't use math notation for fields whose computation is trivial (use plain english), it will likely be confusing to the reader. 
+    - Note: don't use math notation for fields whose computation is trivial (use plain english), it will likely be confusing to the reader.
       Only use math notation for fields that can not be easilyexplained in plain english. Use it sparingly.
 3. If there are multiple fields that have the similar computation, you can explain them together in one explanation.
     - in "field", you can provide a list of fields in format of "field1, field2, ..."
@@ -35,8 +36,8 @@ Your goal:
 4. If the code is about statistical analysis, you should explain the statistical analysis in the explanation as a concept named "Statistical Analysis" in the [CONCEPTS EXPLANATION] section.
     - explain how you model the data, which fields are used, how data processing is done, and what models are used.
     - suggest some other modeling approaches that can be used to analyze the data in the explanation as well.
-    
-The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc. 
+
+The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc.
 
 Provide the result in the following two sections:
     - first section is the code explanation that should be a markdown block explaining the code, in the [CODE EXPLANATION] section.
@@ -58,9 +59,9 @@ Provide the result in the following two sections:
 ]
 
 ```
-'''
+"""
 
-EXAMPLE = '''
+EXAMPLE = """
 [CONTEXT]
 
 Here are our datasets, here are their field summaries and samples:
@@ -107,17 +108,17 @@ def transform_data(df_movies):
     rt = df_movies['Rotten_Tomatoes_Rating'] / 10.0  # Rotten Tomatoes is out of 100
     imdb = df_movies['IMDB_Rating']
     avg_rating = pd.concat([rt, imdb], axis=1).mean(axis=1, skipna=True)
-    
+
     # Normalize avg_rating
     norm_rating = (avg_rating - avg_rating.min()) / (avg_rating.max() - avg_rating.min())
-    
+
     # Normalize Worldwide_Gross
     gross = df_movies['Worldwide_Gross']
     norm_gross = (gross - gross.min()) / (gross.max() - gross.min())
-    
+
     # Calculate 'critical-commercial success' score
     score = norm_rating * norm_gross
-    
+
     # Extract decade from Release_Date
     def extract_decade(date_str):
         if pd.isnull(date_str):
@@ -127,9 +128,9 @@ def transform_data(df_movies):
             return f"{year // 10 * 10}s"
         except:
             return np.nan
-    
+
     decade = df_movies['Release_Date'].apply(extract_decade)
-    
+
     transformed_df = pd.DataFrame({
         'Title': df_movies['Title'],
         'Major_Genre': df_movies['Major_Genre'],
@@ -156,92 +157,106 @@ def transform_data(df_movies):
 [CONCEPTS EXPLANATION]
 
 ```json
-[  
-    {  
-        "field": "Norm_Rating",  
-        "explanation": "The normalized rating scales **Avg_Rating** between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Norm-BSLASH-_Rating} = -BSLASH-frac{-BSLASH-text{Avg-BSLASH-_Rating} - -BSLASH-text{Min}(-BSLASH-text{Avg-BSLASH-_Rating})}{-BSLASH-text{Max}(-BSLASH-text{Avg-BSLASH-_Rating}) - -BSLASH-text{Min}(-BSLASH-text{Avg-BSLASH-_Rating})} -BSLASH-)"  
-    },  
-    {  
-        "field": "Norm_Gross",  
-        "explanation": "The normalized worldwide gross scales **Worldwide_Gross** between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Norm-BSLASH-_Gross} = -BSLASH-frac{-BSLASH-text{Worldwide-BSLASH-_Gross} - -BSLASH-text{Min}(-BSLASH-text{Worldwide-BSLASH-_Gross})}{-BSLASH-text{Max}(-BSLASH-text{Worldwide-BSLASH-_Gross}) - -BSLASH-text{Min}(-BSLASH-text{Worldwide-BSLASH-_Gross})} -BSLASH-)"  
-    },  
-    {  
-        "field": "Critical_Commercial_Score",  
-        "explanation": "The critical-commercial success score combines **Norm_Rating** and **Norm_Gross** to represent a movie's critical acclaim and commercial performance. Formula: -BSLASH-(-BSLASH-text{Critical-BSLASH-_Commercial-BSLASH-_Score} = -BSLASH-text{Norm-BSLASH-_Rating} -BSLASH-times -BSLASH-text{Norm-BSLASH-_Gross} -BSLASH-)"  
-    }  
-]  
-'''
+[
+    {
+        "field": "Norm_Rating",
+        "explanation": "The normalized rating scales **Avg_Rating** between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Norm-BSLASH-_Rating} = -BSLASH-frac{-BSLASH-text{Avg-BSLASH-_Rating} - -BSLASH-text{Min}(-BSLASH-text{Avg-BSLASH-_Rating})}{-BSLASH-text{Max}(-BSLASH-text{Avg-BSLASH-_Rating}) - -BSLASH-text{Min}(-BSLASH-text{Avg-BSLASH-_Rating})} -BSLASH-)"
+    },
+    {
+        "field": "Norm_Gross",
+        "explanation": "The normalized worldwide gross scales **Worldwide_Gross** between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Norm-BSLASH-_Gross} = -BSLASH-frac{-BSLASH-text{Worldwide-BSLASH-_Gross} - -BSLASH-text{Min}(-BSLASH-text{Worldwide-BSLASH-_Gross})}{-BSLASH-text{Max}(-BSLASH-text{Worldwide-BSLASH-_Gross}) - -BSLASH-text{Min}(-BSLASH-text{Worldwide-BSLASH-_Gross})} -BSLASH-)"
+    },
+    {
+        "field": "Critical_Commercial_Score",
+        "explanation": "The critical-commercial success score combines **Norm_Rating** and **Norm_Gross** to represent a movie's critical acclaim and commercial performance. Formula: -BSLASH-(-BSLASH-text{Critical-BSLASH-_Commercial-BSLASH-_Score} = -BSLASH-text{Norm-BSLASH-_Rating} -BSLASH-times -BSLASH-text{Norm-BSLASH-_Gross} -BSLASH-)"
+    }
+]
+"""
+
 
 class CodeExplanationAgent(object):
-
     def __init__(self, client):
         self.client = client
 
     def run(self, input_tables, code, n=1):
-
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[CODE]\n\nhere is the transformation code: {code}\n\n[EXPLANATION]\n"
 
         logger.info(user_query)
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
-                    {"role":"user","content": user_query}]
-        
-        response = self.client.get_completion(messages = messages)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_query},
+        ]
+
+        response = self.client.get_completion(messages=messages)
 
         candidates = []
         for choice in response.choices:
-            
             logger.info("\n=== Code explanation result ===>\n")
             logger.info(choice.message.content + "\n")
-            
+
             # Inline parsing of both sections
             response_content = choice.message.content
             code_explanation = ""
             concepts = []
-            
+
             # Find CODE EXPLANATION section
-            code_start = response_content.find('[CODE EXPLANATION]')
+            code_start = response_content.find("[CODE EXPLANATION]")
             if code_start != -1:
-                code_start += len('[CODE EXPLANATION]')
+                code_start += len("[CODE EXPLANATION]")
                 # Find the end of code explanation (either CONCEPTS EXPLANATION or end of content)
-                concepts_start = response_content.find('[CONCEPTS EXPLANATION]', code_start)
+                concepts_start = response_content.find(
+                    "[CONCEPTS EXPLANATION]", code_start
+                )
                 if concepts_start != -1:
-                    code_explanation = response_content[code_start:concepts_start].strip()
+                    code_explanation = response_content[
+                        code_start:concepts_start
+                    ].strip()
                 else:
                     code_explanation = response_content[code_start:].strip()
 
             # Find CONCEPTS EXPLANATION section
-            concepts_start = response_content.find('[CONCEPTS EXPLANATION]')
+            concepts_start = response_content.find("[CONCEPTS EXPLANATION]")
             if concepts_start != -1:
-                concepts_start += len('[CONCEPTS EXPLANATION]')
+                concepts_start += len("[CONCEPTS EXPLANATION]")
                 # Extract JSON from the concepts section
                 concepts_content = response_content[concepts_start:].strip()
                 try:
                     # Escape backslashes by doubling them
-                    raw_json_blocks = extract_code_from_gpt_response(concepts_content, "json")
+                    raw_json_blocks = extract_code_from_gpt_response(
+                        concepts_content, "json"
+                    )
                     json_blocks = [json.loads(block) for block in raw_json_blocks]
                 except Exception as e:
                     json_blocks = []
 
                 if json_blocks:
                     concepts = json_blocks[0]
-            
+
             # Build result
             if code_explanation or concepts != []:
                 result = {
-                    'status': 'ok', 
-                    'concepts': concepts,
-                    'code': code_explanation
+                    "status": "ok",
+                    "concepts": concepts,
+                    "code": code_explanation,
                 }
             else:
-                logger.error(f"unable to extract JSON from response: {response_content}")
-                result = {'status': 'other error', 'content': 'unable to create code and concepts explanation'}
-            
+                logger.error(
+                    f"unable to extract JSON from response: {response_content}"
+                )
+                result = {
+                    "status": "other error",
+                    "content": "unable to create code and concepts explanation",
+                }
+
             # individual dialog for the agent
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'CodeExplanationAgent'
+            result["dialog"] = [
+                *messages,
+                {"role": choice.message.role, "content": choice.message.content},
+            ]
+            result["agent"] = "CodeExplanationAgent"
 
             candidates.append(result)
 
