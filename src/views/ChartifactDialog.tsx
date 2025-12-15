@@ -1,6 +1,3 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
-
 import { Chart, DictTable, FieldItem } from "../components/ComponentType";
 import { assembleVegaChart, prepVisTable } from "../app/utils";
 import { exportTableToDsv } from "../data/utils";

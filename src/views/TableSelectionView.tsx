@@ -1,6 +1,3 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
-
 import * as React from "react";
 import validator from "validator";
 import DOMPurify from "dompurify";

@@ -1,6 +1,3 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
-
 import React, { FC, useState, useRef, useEffect, memo, useMemo } from "react";
 import {
   Box,

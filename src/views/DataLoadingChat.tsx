@@ -1,5 +1,4 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+ 
 
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';

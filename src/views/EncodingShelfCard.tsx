@@ -1,5 +1,4 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+ 
 
 import { FC, useEffect, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";

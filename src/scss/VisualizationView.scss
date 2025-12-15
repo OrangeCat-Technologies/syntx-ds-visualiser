@@ -1,5 +1,4 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+
 
 .visualization-gallery {
     padding: 0; //0px 10px 10px 10px;
@@ -19,7 +18,7 @@
     }
 
     .vega-thumbnail-box {
-        
+
         display: flex;
         //color: #fff;
         border-radius: 3px;
@@ -32,14 +31,14 @@
         transform-origin: bottom left;
         animation: appear 0.5s ease-out;
 
-        
+
     }
 
     .vega-thumbnail {
 
         padding: 0px 10px;
         margin: auto;
-        
+
         canvas {
             margin: 6px auto;
         }
@@ -169,7 +168,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         height: 100%;
         display: flex;
         overflow: auto;
-        
+
         .chart-box {
             width: calc(100% - 48px);
             overflow: auto;
@@ -177,7 +176,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
             color: #fff;
             border-radius: 3px;
         }
-      
+
         .chart-box-animation {
             transform-origin: bottom left;
             animation: appear 0.5s ease-out
@@ -197,12 +196,12 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         padding-bottom: 6px;
     }
 
-    
+
 
 }
 
 .data-thread {
-    
+
 
     .thread-view-animation {
         transform-origin: bottom left;
@@ -234,7 +233,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
             opacity: 0;
             transition: visibility 0s, opacity 0.3s linear;
         }
-        
+
         &:hover .data-thread-chart-card-action-button {
             visibility: visible;
             opacity: 1;
@@ -245,7 +244,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         transform-origin: bottom left;
         animation: appear 0.5s ease-out;
     }
-    
+
 }
 
 
@@ -286,7 +285,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         height: 100%;
         display: flex;
         overflow: auto;
-        
+
         .chart-box {
             display: flex;
             color: #fff;
@@ -294,7 +293,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
             border-radius: 3px;
             margin: auto;
         }
-      
+
         .chart-box-animation {
             transform-origin: bottom left;
             animation: appear 0.5s ease-out
@@ -314,6 +313,6 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         padding-bottom: 6px;
     }
 
-    
+
 
 }

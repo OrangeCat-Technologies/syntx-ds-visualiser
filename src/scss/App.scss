@@ -1,5 +1,4 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+
 
 h2.view-title {
     margin: 0;
@@ -129,17 +128,17 @@ h2.view-title {
 
 // Pencil writing animation
 @keyframes writing-pencil {
-    0%, 100% { 
-        transform: rotate(-12deg) translateY(0px); 
+    0%, 100% {
+        transform: rotate(-12deg) translateY(0px);
     }
-    25% { 
-        transform: rotate(-8deg) translateY(-1px); 
+    25% {
+        transform: rotate(-8deg) translateY(-1px);
     }
-    50% { 
-        transform: rotate(-12deg) translateY(0px); 
+    50% {
+        transform: rotate(-12deg) translateY(0px);
     }
-    75% { 
-        transform: rotate(-15deg) translateY(1px); 
+    75% {
+        transform: rotate(-15deg) translateY(1px);
     }
 }
 

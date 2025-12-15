@@ -1,5 +1,4 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+
 
 .encoding-shelf {
     padding: 10px;
@@ -18,7 +17,7 @@
         justify-content: center
     }
 
-    
+
 }
 
 .encoding-shelf-trigger-card {
@@ -72,7 +71,7 @@
         opacity: 0;
         transition: visibility 0s, opacity 0.3s linear;
     }
-    
+
     &:hover .encoding-shelf-action-button {
         visibility: visible;
         opacity: 1;
@@ -92,7 +91,7 @@
         opacity: 0;
         transition: visibility 0s, opacity 0.3s linear;
     }
-    
+
     &:hover .encoding-shelf-action-button {
         visibility: visible;
         opacity: 1;
@@ -122,7 +121,7 @@
 .encoding-item {
     display: block;
     margin-bottom: 4px;
-    
+
 
     .encoding-button-container {
         position: relative;

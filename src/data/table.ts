@@ -1,5 +1,4 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+ 
 
 import Column from './column';
 import { Type } from './types';
