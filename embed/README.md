@@ -1,4 +1,4 @@
-# Embed Data Formulator
+# Embed DS Visualiser
 
 First you'll need to build the bundle:
 ```
@@ -9,7 +9,7 @@ This puts the complete js file in the `dist` folder.
 
 ## Test bundle
 
-Next you can test to see the complete Data Formulator app by opening `/embed/index.html` in your browser. You can do this by double-clicking in your file explorer (this would use the `file://` protocol). 
+Next you can test to see the complete DS Visualiser app by opening `/embed/index.html` in your browser. You can do this by double-clicking in your file explorer (this would use the `file://` protocol). 
 
 To test cross-frame messaging, launch `postMessageTest.html` which hosts the app in an iframe, and has buttons to send commands such as `load data`.
 

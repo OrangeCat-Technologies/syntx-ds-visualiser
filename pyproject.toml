@@ -13,25 +13,25 @@ authors = [
 ]
 readme = "README.md"
 license = "MIT"
-description = "Data Formulator is research protoype data visualization tool powered by AI."
+description = "DS Visualiser is research protoype data visualization tool powered by AI."
 keywords = ["data visualization", "LLM", "AI"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python"
 ]
 
-dependencies = [  
-    "jupyter",  
-    "pandas",  
-    "flask",  
-    "flask-cors",  
-    "openai",  
-    "python-dotenv",  
+dependencies = [
+    "jupyter",
+    "pandas",
+    "flask",
+    "flask-cors",
+    "openai",
+    "python-dotenv",
     "vega_datasets",
     "litellm",
     "duckdb",
-    "numpy",                    
-    "vl-convert-python", 
+    "numpy",
+    "vl-convert-python",
     "backoff",
     "beautifulsoup4",
     "scikit-learn",
@@ -50,9 +50,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/microsoft/data-formulator"
-Repository = "https://github.com/microsoft/data-formulator.git"
-"Bug Tracker" = "https://github.com/microsoft/data-formulator/issues"
+Homepage = "https://github.com/OrangeCat-Technologies/syntx-ds-visualiser"
+Repository = "https://github.com/OrangeCat-Technologies/syntx-ds-visualiser.git"
+"Bug Tracker" = "https://github.com/OrangeCat-Technologies/syntx-ds-visualiser/issues"
 
 [tool.setuptools]
 package-dir = {"" = "py-src"}

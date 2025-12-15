@@ -240,7 +240,7 @@ def database_disabled_fallback(path):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Data Formulator")
+    parser = argparse.ArgumentParser(description="DS Visualiser")
     parser.add_argument("-p", "--port", type=int, default=5000, help="The port number you want to use")
     parser.add_argument("--exec-python-in-subprocess", action='store_true', default=False,
         help="Whether to execute python in subprocess, it makes the app more secure (reducing the chance for the model to access the local machine), but increases the time of response")
